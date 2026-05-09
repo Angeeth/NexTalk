@@ -21,7 +21,6 @@ Frontend:
 Backend:
 - FastAPI
 - WebSockets
-- bcrypt
 
 ---
 
@@ -37,13 +36,19 @@ Everyone connected on the LAN can chat together.
 Users can send direct messages privately.
 
 ## Password Authentication
-Passwords are securely hashed using bcrypt and stored on backend.
+Passwords are securely hashed using SHA-256 and stored on backend.
 
 ## Encrypted Local Storage
 Messages stored in browser localStorage are AES encrypted.
 
 ## Auto Message Expiry
 Messages older than 24 hours are automatically deleted.
+
+## File Sharing
+Users can upload and share files in chats.
+
+## Auto File Expiry
+Uploaded files are automatically deleted from the server after 24 hours.
 
 
 ---
