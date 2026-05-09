@@ -1,0 +1,10 @@
+{
+  "name": "nextalk",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "concurrently \"cd backend && uvicorn main:app --host 0.0.0.0 --port 8000 --reload\" \"cd frontend && npm run dev -- --host\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

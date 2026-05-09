@@ -80,7 +80,7 @@ const connectWebSocket = async () => {
   try {
 
     const response = await fetch(
-      'http://localhost:8000/login',
+      `http://${window.location.hostname}:8000/login`,
       {
         method: 'POST',
         headers: {
@@ -103,7 +103,7 @@ const connectWebSocket = async () => {
     setCurrentUser(cleanUsername)
 
     const socket = new WebSocket(
-      `ws://localhost:8000/ws/${cleanUsername}`
+      `ws://${window.location.hostname}:8000/ws/${cleanUsername}`
     )
 
     socket.onopen = () => {

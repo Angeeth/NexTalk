@@ -48,32 +48,45 @@ Messages older than 24 hours are automatically deleted.
 
 ---
 
-# Backend Setup
+# Quick Start
 
-## Install Python dependencies:
+## Install all dependencies
 
+### Backend
+cd backend
 pip install -r requirements.txt
 
-## Run FastAPI server:
+### Frontend
+cd ../frontend
+npm install
 
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-
-## Backend will run on:
-
-http://localhost:8000
+### Root
+cd ..
+npm install
 
 ---
 
-# Frontend Setup
+# Run Full Application
 
-## Install frontend dependencies:
+From the root NexTalk folder run:
 
-npm install
+```bash
+npm start
+```
 
-## Run React frontend:
+This will automatically start:
 
-npm run dev
+- FastAPI backend
+- React frontend
 
-## Frontend will run on:
+---
 
-http://localhost:5173
+# LAN Access
+
+To use NexTalk on other devices connected to the same WiFi/LAN:
+
+Open the frontend network URL shown in terminal:
+
+Example:
+
+http://YOUR-IP:5173
