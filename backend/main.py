@@ -1,12 +1,15 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Dict
 import json
 import time
 import os
 import hashlib
+from pathlib import Path
+import threading
 
 app = FastAPI()
 
@@ -18,6 +21,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+UPLOAD_FOLDER = "uploads"
+
+FILE_EXPIRY_HOURS = 24
+
+FILE_EXPIRY_SECONDS = (
+    FILE_EXPIRY_HOURS * 60 * 60
+)
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 USERS_FILE = "users.json"
 
@@ -103,7 +117,7 @@ async def broadcast_users():
 
     disconnected = []
 
-    for user, connection in active_users.items():
+    for user, connection in list(active_users.items()):
 
         try:
             await connection.send_text(json.dumps(payload))
@@ -113,6 +127,71 @@ async def broadcast_users():
 
     for user in disconnected:
         del active_users[user]
+
+
+@app.post("/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    sender: str = Form(...),
+    receiver: str = Form(...),
+    message_type: str = Form(...)
+):
+
+    safe_name = Path(file.filename).name
+    filename = f"{int(time.time())}_{safe_name}"
+
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
+
+    contents = await file.read()
+
+    if len(contents) > 50 * 1024 * 1024:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "message": "File too large"
+            }
+        )
+
+    with open(file_path, "wb") as buffer:
+        buffer.write(contents)
+
+    file_url = f"/uploads/{filename}"
+
+    payload = {
+        "type": "file_message",
+        "sender": sender,
+        "receiver": receiver,
+        "file_name": file.filename,
+        "file_url": file_url,
+        "message_type": message_type,
+        "timestamp": time.time()
+    }
+
+    if message_type == "group":
+
+        for user, connection in list(active_users.items()):
+            try:
+                await connection.send_text(json.dumps(payload))
+            except:
+                del active_users[user]
+
+    else:
+
+        if receiver in active_users:
+            await active_users[receiver].send_text(
+                json.dumps(payload)
+            )
+
+        if sender in active_users:
+            await active_users[sender].send_text(
+                json.dumps(payload)
+            )
+
+    return {
+        "success": True,
+        "file_url": file_url
+    }    
 
 
 @app.websocket("/ws/{username}")
@@ -152,7 +231,7 @@ async def websocket_endpoint(
 
                 disconnected = []
 
-                for user, connection in active_users.items():
+                for user, connection in list(active_users.items()):
 
                     try:
                         await connection.send_text(
@@ -202,3 +281,50 @@ async def websocket_endpoint(
             del active_users[username]
 
         await broadcast_users()
+
+def cleanup_old_files():
+
+    while True:
+
+        now = time.time()
+
+        if not os.path.exists(UPLOAD_FOLDER):
+            time.sleep(60)
+            continue
+
+        for filename in os.listdir(UPLOAD_FOLDER):
+
+            file_path = os.path.join(
+                UPLOAD_FOLDER,
+                filename
+            )
+
+            try:
+
+                if os.path.isfile(file_path):
+
+                    file_age = (
+                        now -
+                        os.path.getmtime(file_path)
+                    )
+
+                    if file_age > FILE_EXPIRY_SECONDS:
+
+                        os.remove(file_path)
+
+                        print(
+                            f"Deleted old file: {filename}"
+                        )
+
+            except Exception as e:
+
+                print(
+                    f"Cleanup error: {e}"
+                )
+
+        time.sleep(3600)
+
+threading.Thread(
+    target=cleanup_old_files,
+    daemon=True
+).start()

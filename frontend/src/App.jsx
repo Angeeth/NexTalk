@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import CryptoJS from 'crypto-js'
+import { Plus } from 'lucide-react'
 
 const SECRET_KEY = 'nextalk-secret-key'
 
@@ -14,6 +15,7 @@ function App() {
 
   const socketRef = useRef(null)
   const messagesEndRef = useRef(null)
+  const fileInputRef = useRef(null)
 
 
 useEffect(() => {
@@ -36,13 +38,30 @@ useEffect(() => {
       JSON.stringify(validMessages)
     )
 
-    const decrypted = validMessages.map((msg) => ({
-      ...msg,
-      message: CryptoJS.AES.decrypt(
-        msg.message,
-        SECRET_KEY
-      ).toString(CryptoJS.enc.Utf8),
-    }))
+    const decrypted = validMessages.map((msg) => {
+
+      if (msg.type === 'file_message') {
+        return {
+          ...msg,
+          file_name: msg.message
+            ? CryptoJS.AES.decrypt(
+                msg.message,
+                SECRET_KEY
+              ).toString(CryptoJS.enc.Utf8)
+            : '',
+        }
+      }
+
+      return {
+        ...msg,
+        message: msg.message
+          ? CryptoJS.AES.decrypt(
+              msg.message,
+              SECRET_KEY
+            ).toString(CryptoJS.enc.Utf8)
+          : '',
+      }
+    })
 
     setMessages(decrypted)
   }
@@ -55,43 +74,55 @@ useEffect(() => {
 }, [messages])
 
 
-  const saveMessage = (msg) => {
-    const encrypted = {
-      ...msg,
-      message: CryptoJS.AES.encrypt(msg.message, SECRET_KEY).toString(),
+    const saveMessage = (msg) => {
+
+      const textToEncrypt =
+        msg.type === 'file_message'
+          ? msg.file_name
+          : msg.message
+
+      const encrypted = {
+        ...msg,
+
+        message: textToEncrypt
+          ? CryptoJS.AES.encrypt(
+              textToEncrypt,
+              SECRET_KEY
+            ).toString()
+          : '',
+      }
+
+      const existing = JSON.parse(
+        localStorage.getItem('nextalk_messages') || '[]'
+      )
+
+      localStorage.setItem(
+        'nextalk_messages',
+        JSON.stringify([...existing, encrypted])
+      )
     }
 
-    const existing = JSON.parse(
-      localStorage.getItem('nextalk_messages') || '[]'
-    )
+  const connectWebSocket = async () => {
 
-    localStorage.setItem(
-      'nextalk_messages',
-      JSON.stringify([...existing, encrypted])
-    )
-  }
+    if (!username.trim() || !password.trim()) return
 
-const connectWebSocket = async () => {
+    const cleanUsername = username.trim()
 
-  if (!username.trim() || !password.trim()) return
+    try {
 
-  const cleanUsername = username.trim()
-
-  try {
-
-    const response = await fetch(
-      `http://${window.location.hostname}:8000/login`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: cleanUsername,
-          password: password,
-        }),
-      }
-    )
+      const response = await fetch(
+        `http://${window.location.hostname}:8000/login`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            username: cleanUsername,
+            password: password,
+          }),
+        }
+      )
 
     const result = await response.json()
 
@@ -140,6 +171,21 @@ const connectWebSocket = async () => {
 
         saveMessage(newMessage)
       }
+
+      if (data.type === 'file_message') {
+
+          const newMessage = {
+            ...data,
+            timestamp: Date.now(),
+          }
+
+          setMessages((prev) => [
+            ...prev,
+            newMessage,
+          ])
+
+          saveMessage(newMessage)
+      }
     }
 
     socketRef.current = socket
@@ -149,6 +195,38 @@ const connectWebSocket = async () => {
     console.log(error)
 
     alert('Server connection failed')
+  }
+}
+
+  const uploadFile = async (file) => {
+
+  const formData = new FormData()
+
+  formData.append('file', file)
+  formData.append('sender', currentUser)
+
+  if (selectedUser === 'Group Chat') {
+    formData.append('receiver', 'group')
+    formData.append('message_type', 'group')
+  } else {
+    formData.append('receiver', selectedUser)
+    formData.append('message_type', 'private')
+  }
+
+  try {
+
+    await fetch(
+      `http://${window.location.hostname}:8000/upload`,
+      {
+        method: 'POST',
+        body: formData,
+      }
+    )
+
+  } catch (error) {
+
+    console.log(error)
+    alert('File upload failed')
   }
 }
 
@@ -176,17 +254,34 @@ const connectWebSocket = async () => {
   }
 
   const filteredMessages = messages.filter((msg) => {
+
     if (selectedUser === 'Group Chat') {
-      return msg.type === 'group_message'
+
+      return (
+        msg.type === 'group_message' ||
+        (msg.type === 'file_message' &&
+          msg.message_type === 'group')
+      )
     }
 
-    return (
-      msg.type === 'private_message' &&
-      ((msg.sender === currentUser &&
-        msg.receiver === selectedUser) ||
-        (msg.sender === selectedUser &&
-          msg.receiver === currentUser))
-    )
+      const isPrivateChat =
+        msg.type === 'private_message' ||
+        (
+          msg.type === 'file_message' &&
+          msg.message_type === 'private'
+        )
+
+      const isBetweenUsers =
+        (
+          msg.sender === currentUser &&
+          msg.receiver === selectedUser
+        ) ||
+        (
+          msg.sender === selectedUser &&
+          msg.receiver === currentUser
+        )
+
+      return isPrivateChat && isBetweenUsers
   })
 
   if (!currentUser) {
@@ -315,6 +410,17 @@ const connectWebSocket = async () => {
           </div>
 
         </div>
+        <button
+          onClick={() => {
+            socketRef.current?.close()
+            setCurrentUser('')
+            setUsername('')
+            setPassword('')
+          }}
+          className="w-full mt-4 h-12 border border-red-800 bg-red-950/20 hover:bg-red-900/30 transition-all"
+        >
+          Logout
+        </button>
       </div>
 
       {/* Chat */}
@@ -369,9 +475,24 @@ const connectWebSocket = async () => {
                         : 'bg-[#111827] border-red-800'
                     }`}
                   >
+                    {msg.type === 'file_message' ? (
+
+                    <a
+                      href={`http://${window.location.hostname}:8000${msg.file_url}`}
+                      target="_blank"
+                      download
+                      className="text-cyan-300 underline break-all"
+                    >
+                      📎 {msg.file_name}
+                    </a>
+
+                  ) : (
+
                     <p className="text-[18px] leading-relaxed break-words">
                       {msg.message}
                     </p>
+
+                  )}
                   </div>
 
                 </div>
@@ -382,29 +503,51 @@ const connectWebSocket = async () => {
         </div>
 
         {/* Input */}
-        <div className="p-6 bg-[#0b0f19] border-t border-slate-800 flex gap-4">
+          <div className="p-6 bg-[#0b0f19] border-t border-slate-800 flex gap-4">
 
-          <input
-            type="text"
-            placeholder={`Message ${selectedUser}`}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                sendMessage()
-              }
-            }}
-            className="flex-1 h-14 bg-[#05070d] border border-blue-900 px-5 text-lg outline-none text-cyan-300 focus:border-cyan-400"
-          />
+            <button
+              onClick={() => fileInputRef.current.click()}
+              className="h-14 w-14 flex items-center justify-center bg-[#111827] border border-slate-700 hover:border-cyan-400 transition-all"
+            >
+              <Plus size={24} />
+            </button>
 
-          <button
-            onClick={sendMessage}
-            className="h-14 px-10 bg-gradient-to-r from-red-600 to-blue-600 font-bold tracking-[2px] hover:brightness-125 transition-all"
-          >
-            SEND
-          </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files[0]
 
-        </div>
+                if (file) {
+                  uploadFile(file)
+                }
+
+                e.target.value = null
+              }}
+            />
+
+            <input
+              type="text"
+              placeholder={`Message ${selectedUser}`}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  sendMessage()
+                }
+              }}
+              className="flex-1 h-14 bg-[#05070d] border border-blue-900 px-5 text-lg outline-none text-cyan-300 focus:border-cyan-400"
+            />
+
+            <button
+              onClick={sendMessage}
+              className="h-14 px-10 bg-gradient-to-r from-red-600 to-blue-600 font-bold tracking-[2px] hover:brightness-125 transition-all"
+            >
+              SEND
+            </button>
+
+          </div>
       </div>
     </div>
   )

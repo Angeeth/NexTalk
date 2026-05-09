@@ -25,6 +25,9 @@ dist-ssr
 
 node_modules
 frontend/node_modules
-__pycache__
+backend/__pycache__/
+backend/uploads/
+backend/users.json
+backend/.env
+
 *.pyc
-.env
